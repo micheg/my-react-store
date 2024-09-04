@@ -1,70 +1,221 @@
-# Getting Started with Create React App
+# Building Your Own Lightweight State Manager for React: A Step-by-Step Guide
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+In the ever-evolving world of front-end development, React has become a foundational tool due to its flexibility, component-based architecture, and rich ecosystem. One of the recurring challenges React developers face is managing application-wide state, particularly as applications grow in complexity. Although there are a variety of popular state management libraries like Redux, MobX, or Zustand, building your own custom state manager can be a valuable learning exercise. It not only deepens your understanding of React's internal workings but also gives you the opportunity to tailor your state management to your specific needs.
 
-## Available Scripts
+In this article, we will walk through the process of creating a lightweight state manager similar to Zustand. This guide assumes basic familiarity with React, hooks (especially `useState` and `useContext`), and functional JavaScript.
 
-In the project directory, you can run:
+## Why Build Your Own State Manager?
 
-### `npm start`
+While established state management libraries are powerful and feature-rich, they can also be overkill for smaller or simpler applications. By building your own state manager, you gain full control over how the state is stored, accessed, and updated. This approach allows you to:
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+1. **Learn how state managers work**: By rolling your own state manager, you gain a better understanding of core concepts like immutability, component reactivity, and the React Context API.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+2. **Keep your app lightweight**: For smaller apps, using a large state management library can introduce unnecessary overhead. A custom solution gives you exactly what you need and nothing more.
 
-### `npm test`
+3. **Flexibility**: By writing your own solution, you can adjust the behavior to suit your specific requirements without being bound by the constraints of third-party libraries.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Step 1: Defining the Store
 
-### `npm run build`
+Our goal is to create a store that holds a global state, which can be accessed and modified by any component in the React tree. For this, we'll use React's `useContext` and `useState` hooks, which will help us distribute and manage state throughout the application. We will also use `useEffect` to manage subscriptions to state changes efficiently.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Here is the implementation of our custom `useStore` hook and global store:
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### `useStore.js`
+```javascript
+import { useState, useEffect, useContext, createContext } from 'react';
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+// Create a Context to hold the store
+const StoreContext = createContext(null);
 
-### `npm run eject`
+// Function to create a global store
+export const createStore = (initialState) => {
+  let storeState = initialState;
+  const listeners = new Set();
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+  const setState = (newState) => {
+    // Update the global state
+    storeState = typeof newState === 'function' ? newState(storeState) : newState;
+    // Notify all listeners of the state change
+    listeners.forEach((listener) => listener(storeState));
+  };
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+  const getState = () => storeState;
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+  const subscribe = (listener) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+  // Hook to be used in React components
+  const useStore = (selector = (state) => state) => {
+    const [state, setStateLocal] = useState(() => selector(storeState));
 
-## Learn More
+    useEffect(() => {
+      const listener = (newState) => {
+        const selectedState = selector(newState);
+        setStateLocal(selectedState);
+      };
+      // Subscribe the component to state changes
+      const unsubscribe = subscribe(listener);
+      // Update state once on mount
+      listener(storeState);
+      return unsubscribe;
+    }, [selector]);
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+    return state;
+  };
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+  return { getState, setState, useStore };
+};
 
-### Code Splitting
+// Store Provider
+export const StoreProvider = ({ children, store }) => {
+  return (
+    <StoreContext.Provider value={store}>
+      {children}
+    </StoreContext.Provider>
+  );
+};
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+// Hook to access the global store
+export const useGlobalStore = (selector) => {
+  const store = useContext(StoreContext);
+  if (!store) {
+    throw new Error("useGlobalStore must be used within a StoreProvider");
+  }
+  return store.useStore(selector);
+};
+```
 
-### Analyzing the Bundle Size
+### Explaining the Code:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+- **Context Creation**: The `StoreContext` is created using `createContext`, which allows us to share the store globally across all components in the React tree.
 
-### Making a Progressive Web App
+- **Global State Management**: We define `storeState` to hold our global state. This is managed through a `setState` function, which updates the state and notifies any subscribed components of the changes.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+- **useStore Hook**: This hook is the key to connecting our components to the global state. It uses React's `useState` to track the relevant part of the global state and `useEffect` to handle the subscription to state changes.
 
-### Advanced Configuration
+- **Store Provider**: The `StoreProvider` component is a wrapper that provides the store to any component within its tree using React's `Provider` pattern.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+- **Selector Pattern**: The `selector` function allows components to subscribe to specific parts of the state. This is particularly useful for performance, as it ensures components only re-render when the specific piece of state they care about changes.
 
-### Deployment
+## Step 2: Implementing and Using the Store
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+Now that we have our store, let’s implement a simple example to demonstrate how to use it.
 
-### `npm run build` fails to minify
+### `store.js`
+```javascript
+import { createStore } from './useStore';
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+// Initial state of the store
+const initialState = {
+  count: 0,
+};
+
+export const store = createStore(initialState);
+```
+
+### `App.js`
+```javascript
+import React from 'react';
+import { store } from './store';
+import { StoreProvider, useGlobalStore } from './useStore';
+
+const Counter = () => {
+  // Access the count value from the store
+  const count = useGlobalStore((state) => state.count);
+
+  const increment = () => {
+    store.setState((state) => ({ ...state, count: state.count + 1 }));
+  };
+
+  return (
+    <div>
+      <h1>Count: {count}</h1>
+      <button onClick={increment}>Increment</button>
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <StoreProvider store={store}>
+      <Counter />
+    </StoreProvider>
+  );
+};
+
+export default App;
+```
+
+### Breaking Down the Example:
+
+1. **Creating the Store**: In `store.js`, we use `createStore` to initialize a store with an initial state of `{ count: 0 }`.
+
+2. **Accessing the Store in a Component**: In the `Counter` component, we use the `useGlobalStore` hook to access the `count` value from the global state. The selector `(state) => state.count` ensures that this component only re-renders when the `count` value changes.
+
+3. **Updating the State**: When the button is clicked, the `increment` function is called, which updates the global state using `store.setState`.
+
+### Step 3: Dealing with Nested Components
+
+One of the benefits of this pattern is that it works seamlessly across deeply nested component trees. Let’s extend our example to see how nested components can access and update the global state.
+
+```javascript
+import React from 'react';
+import { store } from './store';
+import { StoreProvider, useGlobalStore } from './useStore';
+
+const Grandchild = () => {
+  const count = useGlobalStore((state) => state.count);
+  return <div>Grandchild Count: {count}</div>;
+};
+
+const Child = () => {
+  return (
+    <div>
+      <h2>Child Component</h2>
+      <Grandchild />
+    </div>
+  );
+};
+
+const Counter = () => {
+  const count = useGlobalStore((state) => state.count);
+
+  const increment = () => {
+    store.setState((state) => ({ ...state, count: state.count + 1 }));
+  };
+
+  return (
+    <div>
+      <h1>Count: {count}</h1>
+      <button onClick={increment}>Increment</button>
+      <Child />
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <StoreProvider store={store}>
+      <Counter />
+    </StoreProvider>
+  );
+};
+
+export default App;
+```
+
+### Explanation:
+
+- **Component Hierarchy**: In this example, the `Grandchild` component, nested inside `Child` and `Counter`, is able to access the `count` value from the store. The `useGlobalStore` hook allows any component, regardless of depth, to subscribe to state changes.
+
+- **Reactivity**: When the `increment` function in `Counter` is triggered, it updates the state. Thanks to the selector pattern, both the `Counter` and `Grandchild` components will re-render because they both rely on the `count` value.
+
+### Ending
+
+Creating your own lightweight state manager for React is not only a fun and educational exercise, but it can also be a practical solution for simpler applications. By leveraging React's hooks and context API, you can build an efficient, scalable solution that meets the specific needs of your project.
+
+This implementation is flexible, lightweight, and easy to understand, making it an ideal choice for small-to-medium-sized projects where larger libraries may be overkill. It also introduces you to some of the key concepts behind state management, giving you a better understanding of how libraries like Zustand or Redux work under the hood.
+
+Building your own state manager is an excellent way to reinforce your knowledge of React and modern JavaScript patterns, and it could be the perfect fit for your next project!
